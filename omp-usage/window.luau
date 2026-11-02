@@ -1794,7 +1794,7 @@ local PANEL_KEYS = "ctrl+alt+u"
 -- The panel's pane while it is open, and what redraws it (see the panel section); the dock last read, which
 -- the panel's preview of the line is drawn from.
 local panel_pane: number? = nil
-local sync_panel: (cx: WindowCx, force: boolean, settings: Settings?, cache: Cache?) -> ()
+local sync_panel: (cx: WindowCx, force: boolean, settings: Settings?, cache: Cache?, immediate: boolean?) -> ()
 local last_dock: Dock? = nil
 
 -- A chord as the keymap spells it (`ctrl+alt+u`) for people (`Ctrl+Alt+U`); a sequence's steps are spaced.
@@ -1846,7 +1846,7 @@ local function settings_hint(cx: WindowCx): string
 	return "settings · " .. (shortcut(cx) or "omp Usage in the palette")
 end
 
-local refresh: (cx: WindowCx) -> ()
+local refresh: (cx: WindowCx, immediate: boolean?) -> ()
 -- What the installed sheet was built from (see `show_pane`).
 local sheet_key: string? = nil
 
@@ -1930,7 +1930,7 @@ end
 -- Shows the focused agent's usage; a focused non-agent pane keeps the last line (no composer shows it there),
 -- but while the settings panel has focus the line it last showed follows the settings, for the panel's preview.
 -- Then redraws the panel if what it shows changed.
-refresh = function(cx: WindowCx)
+refresh = function(cx: WindowCx, immediate: boolean?)
 	local target: number? = nil
 	local pane = cx.session:focused()
 	if pane ~= nil then
@@ -1950,7 +1950,7 @@ refresh = function(cx: WindowCx)
 		show_pane(cx, target :: number, settings, cache)
 	end
 	if panel_pane ~= nil then
-		sync_panel(cx, false, settings, cache)
+		sync_panel(cx, false, settings, cache, immediate)
 	end
 end
 
@@ -2189,7 +2189,7 @@ end
 
 local function after_change(cx: WindowCx?)
 	if cx then
-		refresh(cx)
+		refresh(cx, true)
 	end
 end
 
@@ -3173,9 +3173,8 @@ local function install_panel(css: string)
 end
 
 -- Redraws the panel if what it shows changed (or `force`), from the poll's settings and cache when it has them.
--- The drawing (the view, its sheet and the update, ~10 ms) runs in a call of its own, so a poll that also drew
--- the line stays well inside its budget.
-sync_panel = function(cx: WindowCx, force: boolean, settings: Settings?, cache: Cache?)
+-- User changes draw immediately; polling defers drawing to keep its callback within the 50 ms budget.
+sync_panel = function(cx: WindowCx, force: boolean, settings: Settings?, cache: Cache?, immediate: boolean?)
 	local pane = panel_pane
 	if pane == nil then
 		return
@@ -3185,20 +3184,29 @@ sync_panel = function(cx: WindowCx, force: boolean, settings: Settings?, cache: 
 		return
 	end
 	panel_sig = state.sig
-	tern.timer(0, function(later: WindowCx?)
-		if later == nil or panel_pane ~= pane or panel_sig ~= state.sig then
+	local function draw(later: WindowCx)
+		if panel_pane ~= pane or panel_sig ~= state.sig then
 			return -- closed, replaced, or a newer drawing is on its way
 		end
 		local view, dock, css = panel_parts(state)
 		install_panel(css)
 		local ok = pcall(function()
-			(later :: WindowCx).canvas:set(pane :: number, { view = view, dock = dock })
+			later.canvas:set(pane :: number, { view = view, dock = dock })
 		end)
 		if not ok then
 			panel_pane = nil -- closed meanwhile
 			panel_sig = nil
 		end
-	end)
+	end
+	if immediate then
+		draw(cx)
+	else
+		tern.timer(0, function(later: WindowCx?)
+			if later then
+				draw(later)
+			end
+		end)
+	end
 end
 
 -- This plugin's panel in this window, if one is open.
