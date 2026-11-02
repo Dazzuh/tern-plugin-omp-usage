@@ -1,5 +1,5 @@
-// Mirror of the built-in `usage` statusline segment showing quota REMAINING
-// instead of USED: a fresh account reads 100% left, an exhausted one 0% left.
+// Pooled remaining quota across accounts reported by `omp usage`: a fresh
+// account reads 100% left, an exhausted one 0% left.
 // Saved resets appear only on 7d windows: (+N), or (!N - 3d 2h left) when an
 // applicable available credit expires within 5 days. Countdown is the earliest
 // credit expiry.
@@ -89,7 +89,7 @@ function chipName(m) {
   return name.startsWith("Claude ") ? name.slice(7) : name;
 }
 
-// Any provider can have a usage report; pickReport decides whether one exists.
+// Any provider can have a usage report; matchingReports decides whether one exists.
 function isTrackedProvider(provider) {
   return provider !== "";
 }
@@ -176,11 +176,9 @@ function shortProvider(provider) {
   return word ? word[0].toUpperCase() + word.slice(1) : provider.replace(/\s+/g, "-");
 }
 
-function pickReport(reports, activeProvider) {
-  const withLimits = reports.filter((r) => r && Array.isArray(r.limits) && r.limits.length > 0);
-  if (!withLimits.length) return null;
-  // Exact provider match only: never backfill from another provider's report.
-  return withLimits.find((r) => String(r.provider).toLowerCase() === activeProvider) ?? null;
+function matchingReports(reports, activeProvider) {
+  return reports.filter((r) => r && Array.isArray(r.limits) && r.limits.length > 0 &&
+    String(r.provider).toLowerCase() === activeProvider);
 }
 
 // The bare ids of each provider's available models (ctx.models.list()), by
@@ -301,48 +299,63 @@ function savedResets(report, applies, bares) {
   return out.sort((a, b) => a.expiresAt - b.expiresAt);
 }
 
-// The line for the windows `applies` passes: one per window, a limit with a
-// tier/model scope (see scopeOf) on its own, labeled with it (`Fable 7d`) and
-// keyed apart from the general window of the same length.
-function renderRemaining(report, applies, bares) {
+// Pool matching windows after filtering for the model. Each account contributes
+// its most-used limit once, and keeps its own credits attached to that limit.
+function renderRemaining(reports, applies, bares) {
   const now = Date.now();
-  const seen = new Map();
-  for (const limit of report.limits) {
-    if (!applies(limit)) continue;
-    const w = windowOf(limit);
-    if (!w) continue;
-    const scope = scopeOf(limit, bares).name.replace(/\s+/g, "-");
-    const key = scope ? `${scope}:${w.key}` : w.key;
-    if (seen.has(key)) continue;
-    const label = scope ? `${scope[0].toUpperCase()}${scope.slice(1)} ${w.label}` : w.label;
-    const amount = limit.amount ?? {};
-    const remainingFrac =
-      typeof amount.remainingFraction === "number"
+  const buckets = new Map();
+  for (const report of reports) {
+    const account = new Map();
+    for (const limit of report.limits) {
+      if (!applies(limit)) continue;
+      const w = windowOf(limit);
+      if (!w) continue;
+      const scope = scopeOf(limit, bares).name.replace(/\s+/g, "-");
+      const key = scope ? `${scope}:${w.key}` : w.key;
+      const amount = limit.amount ?? {};
+      const remaining = typeof amount.remainingFraction === "number"
         ? amount.remainingFraction
-        : typeof amount.usedFraction === "number"
-          ? 1 - amount.usedFraction
-          : undefined;
-    if (typeof remainingFrac !== "number") continue;
-    const pct = w.key === "monthly" ? Math.floor(remainingFrac * 100) : Math.round(remainingFrac * 100);
-    const filled = Math.round(Math.min(1, Math.max(0, remainingFrac)) * 8);
-    const meter = `${"\u2588".repeat(filled)}${"\u2591".repeat(8 - filled)}`;
-    const stash = w.key === "7d" ? stashFor(report, limit, w.key, !scope) : 0;
-    const expiryLeft = stash > 0 ? expiringResetLeft(report, limit, w.key, now) : undefined;
-    const extra = stash <= 0
-      ? ""
-      : expiryLeft === undefined
-        ? ` (+${stash})`
-        : ` (!${stash} - ${fmtResetShort(expiryLeft)} left)`;
-    const resetsAt = limit.window?.resetsAt;
-    const reset = typeof resetsAt === "number" ? ` (${fmtResetShort(resetsAt - now)})` : "";
-    seen.set(key, { ms: w.ms, scoped: !!scope, text: `${label} ${meter} ${pct}% left${reset}${extra}` });
+        : typeof amount.usedFraction === "number" ? 1 - amount.usedFraction : undefined;
+      if (!Number.isFinite(remaining)) continue;
+      const previous = account.get(key);
+      if (!previous || remaining < previous.remaining) account.set(key, { limit, w, scope, remaining });
+    }
+    for (const [key, item] of account) {
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { ...item, total: 0, count: 0, stash: 0, expiry: Infinity };
+        buckets.set(key, bucket);
+      }
+      bucket.total += item.remaining * 100;
+      bucket.count++;
+      if (item.remaining < bucket.remaining) {
+        bucket.remaining = item.remaining;
+        bucket.limit = item.limit;
+      }
+      if (item.w.key === "7d") {
+        const stash = stashFor(report, item.limit, item.w.key, !item.scope);
+        bucket.stash += stash;
+        if (stash > 0) {
+          const expiry = expiringResetLeft(report, item.limit, item.w.key, now);
+          if (expiry !== undefined) bucket.expiry = Math.min(bucket.expiry, expiry);
+        }
+      }
+    }
   }
-  if (!seen.size) return undefined;
-  // Shortest window first; at the same length the general one before scoped ones.
-  const parts = [...seen.values()]
-    .sort((a, b) => (a.ms !== b.ms ? (a.ms < b.ms ? -1 : 1) : Number(a.scoped) - Number(b.scoped)))
-    .map((p) => p.text);
-  return `${shortProvider(report.provider)} ${parts.join(" · ")}`;
+  if (!buckets.size) return undefined;
+  const parts = [...buckets.values()]
+    .sort((a, b) => (a.w.ms !== b.w.ms ? (a.w.ms < b.w.ms ? -1 : 1) : Number(!!a.scope) - Number(!!b.scope)))
+    .map(({ w, scope, total, count, limit, stash, expiry }) => {
+      const mean = total / count;
+      const pct = w.key === "monthly" ? Math.floor(mean) : Math.round(mean);
+      const filled = Math.round(Math.min(1, Math.max(0, mean / 100)) * 8);
+      const meter = `${"\u2588".repeat(filled)}${"\u2591".repeat(8 - filled)}`;
+      const label = scope ? `${scope[0].toUpperCase()}${scope.slice(1)} ${w.label}` : w.label;
+      const reset = typeof limit.window?.resetsAt === "number" ? ` (${fmtResetShort(limit.window.resetsAt - now)})` : "";
+      const extra = stash <= 0 ? "" : expiry === Infinity ? ` (+${stash})` : ` (!${stash} - ${fmtResetShort(expiry)} left)`;
+      return `${label} ${meter} ${pct}% left${reset}${extra}`;
+    });
+  return `${shortProvider(String(reports[0].provider).toLowerCase())} ${parts.join(" · ")}`;
 }
 
 // The status for a model from fetched reports; "" when its provider isn't
@@ -352,12 +365,12 @@ function renderRemaining(report, applies, bares) {
 // left out.
 function lineFor(reports, provider, bare, index) {
   if (!isTrackedProvider(provider)) return "";
-  const report = pickReport(reports, provider);
-  if (!report) return "";
-  const bares = providerBares(report, index);
-  const line = renderRemaining(report, appliesTo(bare, bares), bares);
+  const matched = matchingReports(reports, provider);
+  if (!matched.length) return "";
+  const bares = providerBares(matched[0], index);
+  const line = renderRemaining(matched, appliesTo(bare, bares), bares);
   if (line || bare) return line || "";
-  return renderRemaining(report, () => true, bares) || "";
+  return renderRemaining(matched, () => true, bares) || "";
 }
 
 // Draws the status for the active model from the last fetched reports. With
@@ -393,11 +406,12 @@ async function writeLines(state) {
     const name = chipName(m);
     if (!name) continue;
     const { provider, bare } = identity(m);
-    const report = isTrackedProvider(provider) ? pickReport(reports, provider) : null;
-    const bares = report ? providerBares(report, index) : undefined;
+    const matched = isTrackedProvider(provider) ? matchingReports(reports, provider) : [];
+    const bares = matched.length ? providerBares(matched[0], index) : undefined;
     const entry = {
       line: lineFor(reports, provider, bare, index),
-      resets: report ? savedResets(report, appliesTo(bare, bares), bares) : [],
+      resets: matched.flatMap((report) => savedResets(report, appliesTo(bare, bares), bares))
+        .sort((a, b) => a.expiresAt - b.expiresAt),
     };
     const same = name in entries && JSON.stringify(entries[name]) === JSON.stringify(entry);
     entries[name] = !(name in entries) || same ? entry : null;
@@ -406,14 +420,15 @@ async function writeLines(state) {
   for (const r of reports) {
     const provider = String(r?.provider ?? "").toLowerCase();
     if (!isTrackedProvider(provider) || provider in providers) continue;
-    const report = pickReport(reports, provider);
+    const matched = matchingReports(reports, provider);
     const line = lineFor(reports, provider, "", index);
-    if (!report || !line) continue;
-    const bares = providerBares(report, index);
+    if (!matched.length || !line) continue;
+    const bares = providerBares(matched[0], index);
     providers[provider] = {
       label: shortProvider(provider),
       line,
-      resets: savedResets(report, appliesTo("", bares), bares),
+      resets: matched.flatMap((report) => savedResets(report, appliesTo("", bares), bares))
+        .sort((a, b) => a.expiresAt - b.expiresAt),
     };
   }
   const body = JSON.stringify({ entries, providers });

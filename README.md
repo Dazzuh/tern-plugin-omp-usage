@@ -15,6 +15,8 @@ expires.
   new provider or an unfamiliar window (labeled by its length, e.g. `2h`) shows without changes here. A separate
   meter on the plan, such as Claude's Fable weekly limit, shows beside the general window as its own (`FABLE 7D`)
   whichever model is active; a limit for one model only, such as Codex Spark's, shows only while that model is.
+  When a provider has multiple accounts, each window shows the average remaining share across accounts reporting that window.
+  The countdown follows the most-used account in that window, matching omp's overview; saved resets remain account-specific and are totaled across eligible accounts.
 - Or shows every provider at once, or the ones you choose, in the order you set (see [Settings](#settings)).
 - Each window gets a slim bar filled to the share left, with a lit tip, in its provider's colors: amber at 25%
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
