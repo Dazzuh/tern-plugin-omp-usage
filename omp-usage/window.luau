@@ -28,10 +28,10 @@
 -- narrow pane a window that doesn't fit wraps, whole, onto a second line the 13px box cuts off; its tip, on the
 -- meter's `::after`, is sized to nothing past the box's width, so it goes too.
 --
--- Hovering the line lifts it into a glass capsule at full strength and, after a beat, opens a card above it with
--- the facts spelled out: a row and a meter per window, with its reset countdown and clock time, each saved
--- reset's expiry date, and other statuses. Tern draws its own tooltips from `title` attributes, which a plugin
--- can't set on omp's nodes, and it shows the nearest `title` up the tree, so neither can hang off the meter
+-- Hovering opens a bounded detail box: per-account windows, reset countdowns and clock times, and saved-reset
+-- expiry dates. Its host scrolls the complete card so text and meters stay together. Tern's own tooltips use
+-- `title` attributes, which a plugin can't set on omp's nodes, and it shows the nearest `title` up the tree,
+-- so neither can hang off the meter
 -- (its context tooltip would show too). The hover target is the composer's attachment-chips row instead: empty
 -- and hidden unless something is attached, untitled all the way up, and a direct child of the composer like the
 -- meter, so it can be laid over the line with the meter's own offsets. While attachments show, the line stays
@@ -70,7 +70,7 @@ local CACHE_MAX_AGE_MS = 10 * 60 * 1000
 local WINDOW_NAMES: { [string]: string } = { ["5h"] = "5-hour", ["1d"] = "Daily", ["7d"] = "Weekly", mo = "Monthly" }
 local WEEKDAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
--- "N% left" at or below these tints a window (and rings the hover capsule).
+-- "N% left" at or below these tints a window.
 local WARN_AT = 25
 local BAD_AT = 10
 -- A saved reset expiring this soon reads `--warn` in the card (the extension flags it with `!` in the line).
@@ -1233,40 +1233,26 @@ local function host(region: string?): string
 	return ".tn-pane.on " .. string.format(HOST, if region then region .. " " else "")
 end
 
--- The providers' colors as variables on the composer, which the line, its tips, the capsule and the card all
--- sit in; the capsule's ring and the card's glow follow the line's one provider (with several, the theme's), and
--- the ring turns `--warn` or `--bad` with the lowest window.
+-- The providers' colors as variables on the composer, which the line, its tips and the card all sit in; the
+-- card's glow follows the line's one provider (with several, the theme's accent).
 local function palette_css(model: Model, settings: Settings): string
 	local lines: { string } = {}
-	local lowest: number? = nil
 	for g, group in model.groups do
 		local palette = palette_for(settings, group.id, group.label)
 		table.insert(lines, string.format("\t--ou-g%d-a: %s;", g, palette.a))
 		table.insert(lines, string.format("\t--ou-g%d-b: %s;", g, palette.b or palette.a))
-		for _, window in group.windows do
-			lowest = if lowest == nil then window.pct else math.min(lowest :: number, window.pct)
-		end
 	end
-	local low = if lowest then tone_of(lowest) else "ok"
 	local one = #model.groups == 1
-	local ring = if low == "warn"
-		then faded("var(--warn)", 45)
-		elseif low == "bad" then faded("var(--bad)", 50)
-		elseif one then faded(group_color(1, "a"), 40)
-		else "var(--l2)"
-	table.insert(lines, "\t--ou-ring: " .. ring .. ";")
 	table.insert(lines, "\t--ou-glow: " .. (if one then group_color(1, "a") else "var(--accent)") .. ";")
-	-- Tern's popover glass is translucent and counts on a backdrop blur, which doesn't take on the card, so text
-	-- behind it would show through: the capsule and card take the glass's color (the card's, in light) opaque
+-- Tern's popover glass is translucent and counts on a backdrop blur, which doesn't take on the card, so text
+-- behind it would show through: the card takes the glass's color (the card's, in light) opaque
 	table.insert(lines, "\t--ou-glass: light-dark(rgb(from var(--card) r g b / 1), rgb(from var(--pop-bg) r g b / 1));")
 	return ".tn-pane.on .sf-col[data-role^='omp.editor'] {\n" .. table.concat(lines, "\n") .. "\n}"
 end
 
--- The line twice: on the meter at rest, and on the hover target over it, at full strength. The target's two
--- pseudo-elements are all a hover can change: Tern restyles the hovered element and its own parts, not its
--- siblings (`:hover +` never updates there), and the line lives on the meter, which comes before the target. So
--- the target's box is the capsule, its `::before` the bright copy, glyph for glyph over the line, and its
--- `::after` the card.
+-- The line, on the meter at rest. The hover target is laid over the same place: its box is the line's strip at
+-- rest and the card's scroll box on hover, and its `::after` is the card. Tern restyles only the hovered element
+-- and its own parts, not its siblings, so the card lives on the target and the line on the meter.
 local LINE_CSS = [==[
 /* room above the hairline for the usage line, clear of the working row; every agent pane, so focus never shifts it */
 .sf-dock .sf-col[data-role^='omp.editor'] {
@@ -1280,8 +1266,7 @@ local LINE_CSS = [==[
 $PALETTE
 /* the line: 10px mono in a 13px box whose second line (where a window that doesn't fit wraps) is cut off; one
    static gradient clipped to the text colors its parts and fills its bars */
-$METER::before,
-$HOST::before {
+$METER::before {
 	content: $CONTENT;
 	height: 13px;
 	overflow: hidden;
@@ -1319,14 +1304,15 @@ $TIPS_CSS
 	left: var(--ou-sp-side);
 	right: calc(var(--ou-sp-side) - 16px);
 }
-/* the hover target over the line: the meter's place in each chat style, widened by the capsule's 6px pad, as
-   long as the line (or the meter, if that's shorter) */
+/* the hover target over the line: the meter's place in each chat style, as long as the line (or the meter, if
+   that's shorter) */
 $HOST {
 	display: block !important;
 	position: absolute;
 	left: 12px;
 	top: -28px;
 	width: min($WIDTH, calc(100% - 24px));
+	min-width: min($WIDTH, calc(100% - 24px));
 	height: 15px;
 	min-height: 0;
 	margin: 0;
@@ -1345,44 +1331,17 @@ $HOST {
 $HOST_READER {
 	left: 16px;
 	width: min($WIDTH, calc(100% - 32px));
+	min-width: min($WIDTH, calc(100% - 32px));
 }
 $HOST_SPINE {
 	left: calc(var(--sp-side) - 6px);
 	width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
+	min-width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
 }
 $HOST_CONSOLE {
 	left: calc(max(0px, (100% - 1040px) / 2) + var(--cn-gut) - 12px);
 	width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
-}
-/* hovered, the line lifts into a glass capsule, ringed in its provider's color (or the lowest window's tone) */
-$HOST:hover {
-	background-color: var(--ou-glass);
-	box-shadow:
-		0 0 0 1px var(--ou-ring),
-		0 8px 20px -12px light-dark(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.8)),
-		inset 0 1px 0 var(--glass-hi);
-}
-/* and comes up to full strength: the copy fades in over it, the capsule hiding the line beneath */
-$HOST::before {
-	position: absolute;
-	left: 6px;
-	right: 6px;
-	top: 1px;
-	background-image: $PAINT$HOVER_IMAGES;
-	background-position: 0 0$HOVER_POSITIONS;
-	background-size: auto$HOVER_SIZES;
-	background-clip: text$HOVER_CLIPS;
-	opacity: 0;
-	transition: opacity 0.2s var(--ease);
-	--ou-lbl: var(--t2);
-	--ou-sep: var(--t3);
-	--ou-num-ok: var(--t1);
-	--ou-dim: var(--t3);
-	--ou-soft: var(--t2);
-	--ou-track: color-mix(in srgb, var(--t1) 20%, transparent);
-}
-$HOST:hover::before {
-	opacity: 1;
+	min-width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
 }
 ]==]
 
@@ -1407,14 +1366,6 @@ $METER::after {
 local function line_css(line: Line, model: Model, settings: Settings): string
 	local paint = line_paint(line)
 	local rest = tips(line, 55)
-	local lit = tips(line, 70)
-	local function more(list: { string }): string
-		return if #list > 0 then ", " .. table.concat(list, ", ") else ""
-	end
-	local clips: { string } = {}
-	for _ in lit.images do
-		table.insert(clips, "border-box")
-	end
 	return fill(LINE_CSS, {
 		METER = METER,
 		HOST = host(nil),
@@ -1433,10 +1384,6 @@ local function line_css(line: Line, model: Model, settings: Settings): string
 			})
 			else "",
 		WIDTH = num(line.glyphs * GLYPH + 12) .. "px",
-		HOVER_IMAGES = more(lit.images),
-		HOVER_POSITIONS = more(lit.positions),
-		HOVER_SIZES = more(lit.sizes),
-		HOVER_CLIPS = more(clips),
 	})
 end
 
@@ -1557,11 +1504,30 @@ end
 local CARD_CSS = [==[
 /* the card: the line's facts spelled out over it, a row each, in a glass panel with a title bar; one gradient,
    row by row, colors the text, and each window's row sits on a meter with a lit tip */
+/* The host scrolls the whole card, including its meters. Keep the trigger's width to retain far-right hovers. */
+/* shortcut: bounds use the viewport; use pane-relative bounds when Tern exposes pane geometry. */
+$HOST:hover {
+	top: auto;
+	bottom: calc(100% + 13px);
+	height: auto;
+	width: max-content;
+	max-width: calc(100vw - 32px);
+	max-height: min(60vh, calc(100vh - 240px));
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior: contain;
+	scrollbar-width: none;
+	background-color: transparent;
+	box-shadow: none;
+}
+/* the card itself, in flow in that box: its rows, meters and glass scroll with it */
 $HOST:hover::after {
 	content: "$CONTENT";
-	position: absolute;
-	left: 0;
-	bottom: calc(100% + 8px);
+	display: block;
+	position: relative;
+	width: max-content;
+	/* the line's 15px strip under the card, and 8px more above it */
+	margin-bottom: 23px;
 	padding: 5px 12px 9px;
 	border-radius: 12px;
 	white-space: pre;
@@ -1718,8 +1684,7 @@ local STILL_CSS = fill(
 	[==[
 /* Reduce Motion, either way: no fades, no rise, no fill, no change sweep; the card still waits its beat, then
    shows at once */
-$HOST_STILL,
-$HOST_STILL::before {
+$HOST_STILL {
 	transition: none;
 }
 $HOST_STILL:hover::after {
@@ -1730,8 +1695,7 @@ $HOST_STILL:hover::after {
 	animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-	$HOST,
-	$HOST::before {
+	$HOST {
 		transition: none;
 	}
 	$HOST:hover::after {

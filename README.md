@@ -26,8 +26,8 @@ expires.
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
 - When a share changes, the line prints again and a comet runs each changed bar to its new level: in the
   provider's color when quota drops, green when it comes back.
-- Hover the line to lift it into a glass capsule; after a beat a card opens above it with each window, its
-  meter, reset countdown and clock time, the expiry date of each saved reset, and the settings shortcut.
+- Hover the line to open the detailed card. Move onto the card and use the mouse wheel to reach every window,
+  reset countdown, clock time and saved reset. Its height is capped against the viewport, not individual split panes.
 - Change what it shows, the providers' order, which of each provider's windows show, and their colors in a
   settings panel: Ctrl+Alt+U, or **usage** in the status bar.
 
@@ -199,6 +199,7 @@ Then restart omp sessions if the extension changed.
 | Another extension's status appears in the usage line or card | Local fix: adopt only quota windows. Hide a native status fact only when the overlay represents all of its text; mixed facts stay visible natively to preserve unrelated statuses. |
 | Usage sits at the pane's far left in Spine chat style | Local fix: align the usage text, tips, and hover capsule with Spine's centered composer gutter; leave the full-width native context hairline unchanged. |
 | Provider card shows a model-only limit absent from its pooled line | The provider and its accounts now choose the scoped-window fallback together, including saved-reset eligibility. |
+| Detail card extends above a short window | Move onto the bounded card and scroll; account rows and reset times are retained. Very short vertical splits may still need more room because Tern exposes viewport bounds, not pane bounds. |
 
 Don't edit Tern's `settings.json` from PowerShell. It saves the file with a BOM, and Tern falls back to its
 default settings until the file is restored.
