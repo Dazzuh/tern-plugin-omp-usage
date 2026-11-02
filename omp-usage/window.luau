@@ -1262,6 +1262,13 @@ $METER::before {
 	margin-bottom: 2px;
 }
 $TIPS_CSS
+/* Spine's meter is 16px narrower than the frame that defines the centered composer gutter. */
+.tn-pane.on .sf-chat-spine.sf-dock .sf-meter[data-role='omp.composer.context']::before,
+.tn-pane.on .sf-chat-spine.sf-dock .sf-meter[data-role='omp.composer.context']::after {
+	--ou-sp-side: max(calc(var(--sp-pad) + var(--tv-px, 0px)), calc((100% + 16px) / 2 - 420px));
+	left: var(--ou-sp-side);
+	right: calc(var(--ou-sp-side) - 16px);
+}
 /* the hover target over the line: the meter's place in each chat style, widened by the capsule's 6px pad, as
    long as the line (or the meter, if that's shorter) */
 $HOST {
@@ -1290,8 +1297,8 @@ $HOST_READER {
 	width: min($WIDTH, calc(100% - 32px));
 }
 $HOST_SPINE {
-	left: -6px;
-	width: min($WIDTH, calc(100% - 4px));
+	left: calc(var(--sp-side) - 6px);
+	width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
 }
 $HOST_CONSOLE {
 	left: calc(max(0px, (100% - 1040px) / 2) + var(--cn-gut) - 12px);
