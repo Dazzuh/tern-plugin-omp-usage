@@ -27,8 +27,10 @@ expires.
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
 - When a share changes, the line prints again and a comet runs each changed bar to its new level: in the
   provider's color when quota drops, green when it comes back.
-- Hover the line to open the detailed card. Move onto the card and use the mouse wheel to reach every window,
-  reset countdown, clock time and saved reset. Its height is capped against the viewport, not individual split panes.
+- Hover the line to brighten it in a glass capsule and open the detailed card above it. The card spans at least
+  the line's width, so its visible edges match the hover area. The capsule stays pinned while you scroll through
+  account windows, reset times and saved resets. The card's height is capped against the viewport, not individual
+  split panes.
 - Change what it shows, the providers' order, which of each provider's windows show, and their colors in a
   settings panel: Ctrl+Alt+U, or **usage** in the status bar.
 
@@ -201,6 +203,7 @@ Then restart omp sessions if the extension changed.
 | Usage sits at the pane's far left in Spine chat style | Local fix: align the usage text, tips, and hover capsule with Spine's centered composer gutter; leave the full-width native context hairline unchanged. |
 | Provider card shows a model-only limit absent from its pooled line | The provider and its accounts now choose the scoped-window fallback together, including saved-reset eligibility. |
 | Detail card extends above a short window | Move onto the bounded card and scroll; account rows and reset times are retained. Very short vertical splits may still need more room because Tern exposes viewport bounds, not pane bounds. |
+| Hover no longer brightens the line, or the card stays open beside its visible edge | Reload the plugin after updating. The bright capsule stays pinned during scrolling, and the panel fills its hover target instead of leaving an invisible active area beside it. |
 
 Don't edit Tern's `settings.json` from PowerShell. It saves the file with a BOM, and Tern falls back to its
 default settings until the file is restored.

@@ -28,8 +28,9 @@
 -- narrow pane a window that doesn't fit wraps, whole, onto a second line the 13px box cuts off; its tip, on the
 -- meter's `::after`, is sized to nothing past the box's width, so it goes too.
 --
--- Hovering opens a bounded detail box: per-account windows, reset countdowns and clock times, and saved-reset
--- expiry dates. Its host scrolls the complete card so text and meters stay together. Tern's own tooltips use
+-- Hovering lifts the line into a bright glass capsule and opens a bounded detail card after a beat. The capsule
+-- stays at the bottom while its host scrolls the card's accounts, windows, countdowns and saved-reset dates.
+-- Tern's own tooltips use
 -- `title` attributes, which a plugin can't set on omp's nodes, and it shows the nearest `title` up the tree,
 -- so neither can hang off the meter
 -- (its context tooltip would show too). The hover target is the composer's attachment-chips row instead: empty
@@ -70,7 +71,7 @@ local CACHE_MAX_AGE_MS = 10 * 60 * 1000
 local WINDOW_NAMES: { [string]: string } = { ["5h"] = "5-hour", ["1d"] = "Daily", ["7d"] = "Weekly", mo = "Monthly" }
 local WEEKDAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
--- "N% left" at or below these tints a window.
+-- "N% left" at or below these tints a window and rings the hover capsule.
 local WARN_AT = 25
 local BAD_AT = 10
 -- A saved reset expiring this soon reads `--warn` in the card (the extension flags it with `!` in the line).
@@ -1233,26 +1234,34 @@ local function host(region: string?): string
 	return ".tn-pane.on " .. string.format(HOST, if region then region .. " " else "")
 end
 
--- The providers' colors as variables on the composer, which the line, its tips and the card all sit in; the
--- card's glow follows the line's one provider (with several, the theme's accent).
+-- The capsule's ring follows the lowest window's tone, or the provider's color when none is low.
 local function palette_css(model: Model, settings: Settings): string
 	local lines: { string } = {}
+	local lowest: number? = nil
 	for g, group in model.groups do
 		local palette = palette_for(settings, group.id, group.label)
 		table.insert(lines, string.format("\t--ou-g%d-a: %s;", g, palette.a))
 		table.insert(lines, string.format("\t--ou-g%d-b: %s;", g, palette.b or palette.a))
+		for _, window in group.windows do
+			lowest = if lowest == nil then window.pct else math.min(lowest :: number, window.pct)
+		end
 	end
+	local low = if lowest then tone_of(lowest) else "ok"
 	local one = #model.groups == 1
+	local ring = if low == "warn"
+		then faded("var(--warn)", 45)
+		elseif low == "bad" then faded("var(--bad)", 50)
+		elseif one then faded(group_color(1, "a"), 40)
+		else "var(--l2)"
+	table.insert(lines, "\t--ou-ring: " .. ring .. ";")
 	table.insert(lines, "\t--ou-glow: " .. (if one then group_color(1, "a") else "var(--accent)") .. ";")
--- Tern's popover glass is translucent and counts on a backdrop blur, which doesn't take on the card, so text
--- behind it would show through: the card takes the glass's color (the card's, in light) opaque
+	-- Opaque glass hides the line beneath the capsule and card without relying on backdrop blur.
 	table.insert(lines, "\t--ou-glass: light-dark(rgb(from var(--card) r g b / 1), rgb(from var(--pop-bg) r g b / 1));")
 	return ".tn-pane.on .sf-col[data-role^='omp.editor'] {\n" .. table.concat(lines, "\n") .. "\n}"
 end
 
--- The line, on the meter at rest. The hover target is laid over the same place: its box is the line's strip at
--- rest and the card's scroll box on hover, and its `::after` is the card. Tern restyles only the hovered element
--- and its own parts, not its siblings, so the card lives on the target and the line on the meter.
+-- The meter draws the resting line. The host draws the scrolling card and a sticky bright copy of the line,
+-- since Tern restyles the hovered element and its own parts rather than its siblings.
 local LINE_CSS = [==[
 /* room above the hairline for the usage line, clear of the working row; every agent pane, so focus never shifts it */
 .sf-dock .sf-col[data-role^='omp.editor'] {
@@ -1311,8 +1320,9 @@ $HOST {
 	position: absolute;
 	left: 12px;
 	top: -28px;
-	width: min($WIDTH, calc(100% - 24px));
-	min-width: min($WIDTH, calc(100% - 24px));
+	--ou-trigger-width: min($WIDTH, calc(100% - 24px));
+	width: var(--ou-trigger-width);
+	min-width: var(--ou-trigger-width);
 	height: 15px;
 	min-height: 0;
 	margin: 0;
@@ -1330,18 +1340,58 @@ $HOST {
 }
 $HOST_READER {
 	left: 16px;
-	width: min($WIDTH, calc(100% - 32px));
-	min-width: min($WIDTH, calc(100% - 32px));
+	--ou-trigger-width: min($WIDTH, calc(100% - 32px));
 }
 $HOST_SPINE {
 	left: calc(var(--sp-side) - 6px);
-	width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
-	min-width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
+	--ou-trigger-width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
 }
 $HOST_CONSOLE {
 	left: calc(max(0px, (100% - 1040px) / 2) + var(--cn-gut) - 12px);
-	width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
-	min-width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
+	--ou-trigger-width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
+}
+/* The bright copy stays over the resting line while the card scrolls. */
+$HOST::after {
+	content: $CONTENT;
+	display: block;
+	position: sticky;
+	bottom: 0;
+	box-sizing: border-box;
+	height: 15px;
+	min-height: 15px;
+	padding: 1px 6px;
+	overflow: hidden;
+	border-radius: 8px;
+	white-space: pre-wrap;
+	text-overflow: ellipsis;
+	font: 500 10px/15px var(--mono);
+	font-variant-numeric: tabular-nums;
+	color: transparent;
+	background-color: var(--ou-glass);
+	background-image: $PAINT$HOVER_IMAGES, linear-gradient(transparent, transparent);
+	background-position: 0 0$HOVER_POSITIONS, 0 0;
+	background-size: auto$HOVER_SIZES, auto;
+	background-repeat: no-repeat;
+	background-origin: content-box;
+	background-clip: text$HOVER_CLIPS, border-box;
+	box-shadow:
+		inset 0 0 0 1px var(--ou-ring),
+		0 8px 20px -12px light-dark(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.8)),
+		inset 0 1px 0 var(--glass-hi);
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.2s var(--ease);
+	--ou-lbl: var(--t2);
+	--ou-sep: var(--t3);
+	--ou-num-ok: var(--t1);
+	--ou-num-warn: var(--warn);
+	--ou-num-bad: var(--bad);
+	--ou-dim: var(--t3);
+	--ou-soft: var(--t2);
+	--ou-track: color-mix(in srgb, var(--t1) 20%, transparent);
+}
+$HOST:hover::after {
+	opacity: 1;
 }
 ]==]
 
@@ -1366,6 +1416,14 @@ $METER::after {
 local function line_css(line: Line, model: Model, settings: Settings): string
 	local paint = line_paint(line)
 	local rest = tips(line, 55)
+	local lit = tips(line, 70)
+	local function more(list: { string }): string
+		return if #list > 0 then ", " .. table.concat(list, ", ") else ""
+	end
+	local clips: { string } = {}
+	for _ in lit.images do
+		table.insert(clips, "border-box")
+	end
 	return fill(LINE_CSS, {
 		METER = METER,
 		HOST = host(nil),
@@ -1383,6 +1441,10 @@ local function line_css(line: Line, model: Model, settings: Settings): string
 				SIZES = table.concat(rest.sizes, ", "),
 			})
 			else "",
+		HOVER_IMAGES = more(lit.images),
+		HOVER_POSITIONS = more(lit.positions),
+		HOVER_SIZES = more(lit.sizes),
+		HOVER_CLIPS = more(clips),
 		WIDTH = num(line.glyphs * GLYPH + 12) .. "px",
 	})
 end
@@ -1528,7 +1590,7 @@ $HOST:hover {
 	top: auto;
 	bottom: calc(100% + 13px);
 	height: auto;
-	width: max-content;
+	width: max(var(--ou-trigger-width), $CARD_MIN_WIDTH);
 	max-width: calc(100vw - 32px);
 	max-height: min(60vh, calc(100vh - 240px));
 	overflow-y: auto;
@@ -1539,14 +1601,15 @@ $HOST:hover {
 	box-shadow: none;
 }
 /* the card itself, in flow in that box: its rows, meters and glass scroll with it */
-$HOST:hover::after {
+$HOST:hover::before {
 	content: "$CONTENT";
 	display: block;
 	position: relative;
-	width: max-content;
-	/* the line's 15px strip under the card, and 8px more above it */
-	margin-bottom: 23px;
-	padding: 5px 12px 9px;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: $CARD_MIN_WIDTH;
+	margin-bottom: 8px;
+	padding: 5px max(12px, calc(100% - $CARDW)) 9px 12px;
 	border-radius: 12px;
 	white-space: pre;
 	font: 500 11px/18px var(--mono);
@@ -1688,6 +1751,8 @@ local function card_css(rows: { Row }): string
 	)
 	return fill(CARD_CSS, {
 		HOST = host(nil),
+		CARDW = num(width * 6.6 + 12) .. "px",
+		CARD_MIN_WIDTH = num(width * 6.6 + 24) .. "px",
 		CONTENT = table.concat(lines, "\\A "),
 		IMAGES = table.concat(images, ", "),
 		POSITIONS = table.concat(positions, ", "),
@@ -1702,10 +1767,10 @@ local STILL_CSS = fill(
 	[==[
 /* Reduce Motion, either way: no fades, no rise, no fill, no change sweep; the card still waits its beat, then
    shows at once */
-$HOST_STILL {
+$HOST_STILL, $HOST_STILL::after {
 	transition: none;
 }
-$HOST_STILL:hover::after {
+$HOST_STILL:hover::before {
 	animation: omp-usage-card-still 0s 0.35s both !important;
 }
 .tn-pane.on .sf-still .sf-meter[data-role='omp.composer.context']::before,
@@ -1713,10 +1778,10 @@ $HOST_STILL:hover::after {
 	animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-	$HOST {
+	$HOST, $HOST::after {
 		transition: none;
 	}
-	$HOST:hover::after {
+	$HOST:hover::before {
 		animation: omp-usage-card-still 0s 0.35s both !important;
 	}
 	$METER::before,
