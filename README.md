@@ -186,6 +186,7 @@ Then restart omp sessions if the extension changed.
 | Line stopped after an omp or Tern update | omp may have renamed what the plugin reads. Ask omp to fix `omp-usage` |
 | Edits to `window.luau` don't show | Run `tern plugin reload` |
 | Settings only visibly update after focusing the omp pane | Local fix: user changes redraw the canvas synchronously; polling redraws remain deferred. Reload the plugin after applying the fix. |
+| Usage overlaps the working row in Spine chat style | Local fix: reserve space on Spine's outer composer frame, which anchors the context meter, rather than its static editor column. |
 
 Don't edit Tern's `settings.json` from PowerShell. It saves the file with a BOM, and Tern falls back to its
 default settings until the file is restored.

@@ -1214,6 +1214,10 @@ local LINE_CSS = [==[
 .sf-dock .sf-col[data-role^='omp.editor'] {
 	margin-top: 15px;
 }
+/* Spine anchors the meter to the outer composer frame, not its static editor column. */
+.sf-chat-spine.sf-dock > .sf-col:not([data-role]) {
+	margin-top: 15px;
+}
 /* the providers' colors */
 $PALETTE
 /* the line: 10px mono in a 13px box whose second line (where a window that doesn't fit wraps) is cut off; one
