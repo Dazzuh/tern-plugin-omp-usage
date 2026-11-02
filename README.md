@@ -198,6 +198,7 @@ Then restart omp sessions if the extension changed.
 | Usage overlaps the working row in Spine chat style | Local fix: reserve space on Spine's outer composer frame, which anchors the context meter, rather than its static editor column. |
 | Another extension's status appears in the usage line or card | Local fix: adopt only quota windows. Hide a native status fact only when the overlay represents all of its text; mixed facts stay visible natively to preserve unrelated statuses. |
 | Usage sits at the pane's far left in Spine chat style | Local fix: align the usage text, tips, and hover capsule with Spine's centered composer gutter; leave the full-width native context hairline unchanged. |
+| Provider card shows a model-only limit absent from its pooled line | The provider and its accounts now choose the scoped-window fallback together, including saved-reset eligibility. |
 
 Don't edit Tern's `settings.json` from PowerShell. It saves the file with a BOM, and Tern falls back to its
 default settings until the file is restored.

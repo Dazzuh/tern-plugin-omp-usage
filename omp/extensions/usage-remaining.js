@@ -358,15 +358,19 @@ function renderRemaining(reports, applies, bares) {
   return `${shortProvider(String(reports[0].provider).toLowerCase())} ${parts.join(" · ")}`;
 }
 
-// The status for a model from fetched reports; "" when its provider isn't
-// tracked or has no report. With no model (`bare` ""), the provider's windows
-// that count toward every model; a provider whose limits are all scoped to
-// some of its models shows those instead, so a provider with limits is never
-// left out.
+// The limit test for a provider's lines and saved resets. With no model (`bare`
+// ""), the provider's windows that count toward every model; when none of the
+// matched reports has one, every window, so a provider with limits is never
+// left out. Decided once across the reports so every account agrees with the
+// pooled line.
+function predicateFor(reports, bare, bares) {
+  const applies = appliesTo(bare, bares);
+  return bare || renderRemaining(reports, applies, bares) ? applies : () => true;
+}
+
+// The status for a model from fetched reports; "" when its provider isn't tracked or has no report.
 function renderFor(reports, bare, bares) {
-  const line = renderRemaining(reports, appliesTo(bare, bares), bares);
-  if (line || bare) return line || "";
-  return renderRemaining(reports, () => true, bares) || "";
+  return renderRemaining(reports, predicateFor(reports, bare, bares), bares) || "";
 }
 
 function lineFor(reports, provider, bare, index) {
@@ -398,10 +402,10 @@ function accountLabels(matched) {
 function accountEntries(matched, bare, bares) {
   if (matched.length < 2) return [];
   const labels = accountLabels(matched);
-  const applies = appliesTo(bare, bares);
+  const applies = predicateFor(matched, bare, bares);
   const out = [];
   matched.forEach((report, i) => {
-    const line = renderFor([report], bare, bares);
+    const line = renderRemaining([report], applies, bares) || "";
     if (line) out.push({ label: labels[i], line, resets: savedResets(report, applies, bares) });
   });
   return out;
@@ -444,10 +448,11 @@ async function writeLines(state) {
     const { provider, bare } = identity(m);
     const matched = isTrackedProvider(provider) ? matchingReports(reports, provider) : [];
     const bares = matched.length ? providerBares(matched[0], index) : undefined;
+    const applies = predicateFor(matched, bare, bares);
     const accounts = accountEntries(matched, bare, bares);
     const entry = {
       line: lineFor(reports, provider, bare, index),
-      resets: matched.flatMap((report) => savedResets(report, appliesTo(bare, bares), bares))
+      resets: matched.flatMap((report) => savedResets(report, applies, bares))
         .sort((a, b) => a.expiresAt - b.expiresAt),
       ...(accounts.length ? { accounts } : {}),
     };
@@ -462,11 +467,12 @@ async function writeLines(state) {
     const line = lineFor(reports, provider, "", index);
     if (!matched.length || !line) continue;
     const bares = providerBares(matched[0], index);
+    const applies = predicateFor(matched, "", bares);
     const accounts = accountEntries(matched, "", bares);
     providers[provider] = {
       label: shortProvider(provider),
       line,
-      resets: matched.flatMap((report) => savedResets(report, appliesTo("", bares), bares))
+      resets: matched.flatMap((report) => savedResets(report, applies, bares))
         .sort((a, b) => a.expiresAt - b.expiresAt),
       ...(accounts.length ? { accounts } : {}),
     };
