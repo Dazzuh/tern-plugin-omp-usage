@@ -280,6 +280,37 @@ local function role_is(role: string): (any) -> boolean
 	end
 end
 
+-- One usage-remaining.js window, `[Provider ][Scope ]<span> <meter> <N>% left[ (<reset>)][ (+N) | (!N - <left> left)]`,
+-- and the provider in front of it, if any. A window metered for one tier or model of the plan carries its scope
+-- (`Fable 7d`), which stays in its label so it is told apart from the general window of the same span. The
+-- provider's one-word label leads only a line's `first` window.
+local function parse_window(piece: string, first: boolean): (Window?, string?)
+	local head, span, pct, rest = string.match(piece, "^(.-)(%S+) %S+ (%d+)%% left(.*)$")
+	if span == nil then
+		return nil, nil
+	end
+	local provider: string? = nil
+	local scope = string.match(head :: string, "^%s*(.-)%s*$") :: string
+	if first then
+		local word, after = string.match(scope, "^(%S*)%s*(.*)$")
+		provider, scope = word, after :: string
+	end
+	local label = if scope ~= "" then scope .. " " .. (span :: string) else span :: string
+	local window: Window = { label = label, pct = tonumber(pct) :: number }
+	for group in string.gmatch(rest :: string, "%((.-)%)") do
+		local plus = string.match(group, "^%+(%d+)$")
+		local n, expires = string.match(group, "^!(%d+) %- (.+) left$")
+		if plus then
+			window.saved = tonumber(plus)
+		elseif n then
+			window.saved, window.expires = tonumber(n), expires
+		else
+			window.reset = group
+		end
+	end
+	return window, if provider and provider ~= "" then provider else nil
+end
+
 -- The status's ` · `-separated parts, without context-used.js's gauge.
 local function usage_pieces(status: string): { string }
 	local kept: { string } = {}
@@ -318,9 +349,16 @@ local function dock_facts(tree: any): Dock
 		for _, child in ipairs(extras.c) do
 			if type(child) == "table" and is_status_fact(child.id) then
 				local text = fact_text(child)
-				if text ~= "" then
-					table.insert(parts, text)
-					if #usage_pieces(text) > 0 then
+				local quota: { string } = {}
+				for _, piece in usage_pieces(text) do
+					if parse_window(piece, #quota == 0) then
+						table.insert(quota, piece)
+					end
+				end
+				local usage = table.concat(quota, SEPARATOR)
+				if usage ~= "" then
+					table.insert(parts, usage)
+					if usage == text then
 						table.insert(dock.hide, child.id)
 					end
 				end
@@ -419,36 +457,6 @@ local function reset_text(reset: Reset, now: number): string?
 	return string.format("%s · expires %s, %s · in %s", what, date, clock(t), span(reset.at - now))
 end
 
--- One usage-remaining.js window, `[Provider ][Scope ]<span> <meter> <N>% left[ (<reset>)][ (+N) | (!N - <left> left)]`,
--- and the provider in front of it, if any. A window metered for one tier or model of the plan carries its scope
--- (`Fable 7d`), which stays in its label so it is told apart from the general window of the same span. The
--- provider's one-word label leads only a line's `first` window.
-local function parse_window(piece: string, first: boolean): (Window?, string?)
-	local head, span, pct, rest = string.match(piece, "^(.-)(%S+) %S+ (%d+)%% left(.*)$")
-	if span == nil then
-		return nil, nil
-	end
-	local provider: string? = nil
-	local scope = string.match(head :: string, "^%s*(.-)%s*$") :: string
-	if first then
-		local word, after = string.match(scope, "^(%S*)%s*(.*)$")
-		provider, scope = word, after :: string
-	end
-	local label = if scope ~= "" then scope .. " " .. (span :: string) else span :: string
-	local window: Window = { label = label, pct = tonumber(pct) :: number }
-	for group in string.gmatch(rest :: string, "%((.-)%)") do
-		local plus = string.match(group, "^%+(%d+)$")
-		local n, expires = string.match(group, "^!(%d+) %- (.+) left$")
-		if plus then
-			window.saved = tonumber(plus)
-		elseif n then
-			window.saved, window.expires = tonumber(n), expires
-		else
-			window.reset = group
-		end
-	end
-	return window, if provider and provider ~= "" then provider else nil
-end
 
 -- A usage line, `<Label> <window> · <window>`, or a status with other parts between: the label in front of
 -- the first window, the windows, and the other parts as they are.
