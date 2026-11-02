@@ -1319,7 +1319,8 @@ $TIPS_CSS
 $HOST {
 	position: absolute;
 	left: 12px;
-	bottom: 0;
+	/* Align the bright hover text with the resting meter text. */
+	bottom: -2px;
 	--ou-available: calc(100% - 24px);
 	--ou-trigger-width: min($WIDTH, 100%);
 	width: var(--ou-available);
@@ -1599,6 +1600,8 @@ $HOST > [data-role='ou.card'] {
 	min-width: 0;
 	min-height: 0;
 	max-height: min(60vh, calc(100vh - 240px));
+	/* Keep the invisible hover bridge while separating the painted card from the pill. */
+	border-bottom: 8px solid transparent;
 	overflow-y: auto;
 	overflow-x: hidden;
 	overscroll-behavior: contain;

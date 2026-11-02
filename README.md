@@ -27,10 +27,11 @@ expires.
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
 - When a share changes, the line prints again and a comet runs each changed bar to its new level: in the
   provider's color when quota drops, green when it comes back.
-- Hover the line to brighten it in a glass capsule and open a compact detailed card above it. Short strips keep
-  the card left-aligned; strips at least twice the card's width center it. The strip and card have separate hover
-  targets, so empty space beside the card doesn't keep it open. The capsule stays pinned while you scroll through
-  account windows, reset times and saved resets. Height is capped against the viewport, not individual split panes.
+- Hover the line to brighten it in a glass capsule without shifting its baseline and open a compact detailed card
+  above it. Short strips keep the card left-aligned; strips at least twice the card's width center it. An invisible
+  hover bridge spans the visual gap between the capsule and card, while empty space beside the card doesn't keep it
+  open. The capsule stays pinned while you scroll through account windows, reset times and saved resets. Height is
+  capped against the viewport, not individual split panes.
 - Change what it shows, the providers' order, which of each provider's windows show, and their colors in a
   settings panel: Ctrl+Alt+U, or **usage** in the status bar.
 
