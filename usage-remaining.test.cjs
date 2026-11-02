@@ -28,7 +28,7 @@ test("pools account windows and keeps saved resets with their owners", async () 
     const ctx = {
       model: models[0],
       models: { list: async () => models },
-      ui: { setStatus: (_key, value) => { status = value; } },
+      ui: { setStatus: (_key, value) => { status = value; }, setWidget: () => {} },
       setInterval: () => {},
     };
     const limit = (id, window, remaining, resetHours, scope = {}) => ({
@@ -141,7 +141,7 @@ test("provider fallback is decided once, so accounts match the pooled line and r
     const ctx = {
       model: models[0],
       models: { list: async () => models },
-      ui: { setStatus: () => {} },
+      ui: { setStatus: () => {}, setWidget: () => {} },
       setInterval: () => {},
     };
     const limit = (id, window, remaining, resetHours, scope = {}) => ({

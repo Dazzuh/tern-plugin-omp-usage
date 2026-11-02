@@ -27,16 +27,16 @@ expires.
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
 - When a share changes, the line prints again and a comet runs each changed bar to its new level: in the
   provider's color when quota drops, green when it comes back.
-- Hover the line to brighten it in a glass capsule and open the detailed card above it. The card spans at least
-  the line's width, so its visible edges match the hover area. The capsule stays pinned while you scroll through
-  account windows, reset times and saved resets. The card's height is capped against the viewport, not individual
-  split panes.
+- Hover the line to brighten it in a glass capsule and open a compact detailed card above it. Short strips keep
+  the card left-aligned; strips at least twice the card's width center it. The strip and card have separate hover
+  targets, so empty space beside the card doesn't keep it open. The capsule stays pinned while you scroll through
+  account windows, reset times and saved resets. Height is capped against the viewport, not individual split panes.
 - Change what it shows, the providers' order, which of each provider's windows show, and their colors in a
   settings panel: Ctrl+Alt+U, or **usage** in the status bar.
 
 | Part | What it does |
 | --- | --- |
-| `omp/extensions/usage-remaining.js` | omp extension. Fetches `omp usage --json`, sets the line as an omp extension status, and writes every model's and provider's line to a cache file. |
+| `omp/extensions/usage-remaining.js` | omp extension. Fetches `omp usage --json`, sets the line as an omp extension status, supplies the native hover widget, and writes every model's and provider's line to a cache file. |
 | `omp-usage/` | Tern plugin. Reads the focused omp pane's extension statuses and the cache, draws the line above the context bar, hides the statuses it redraws from the bar (the rest of omp's status line stays), keeps the session cost in the bar, and adds the settings panel. |
 
 Tested with Tern 0.9.9 and omp 18.15.0 on Windows.
@@ -101,7 +101,8 @@ statusLine:
 
 ### 5. Restart omp
 
-omp loads extensions when a session starts. Open a new omp pane, or restart open ones.
+omp loads extensions when a process starts. Open a new omp pane, or restart open ones. Both the status line and
+the native hover widget come from the extension; reloading only the Tern plugin won't add the widget to an old session.
 
 ## Check it works
 
@@ -177,7 +178,7 @@ git pull
 tern plugin reload
 ```
 
-Then restart omp sessions if the extension changed.
+Then restart omp sessions if the extension changed. The compact hover card requires the updated extension's native widget.
 
 ## Turn it off or uninstall
 
@@ -203,7 +204,7 @@ Then restart omp sessions if the extension changed.
 | Usage sits at the pane's far left in Spine chat style | Local fix: align the usage text, tips, and hover capsule with Spine's centered composer gutter; leave the full-width native context hairline unchanged. |
 | Provider card shows a model-only limit absent from its pooled line | The provider and its accounts now choose the scoped-window fallback together, including saved-reset eligibility. |
 | Detail card extends above a short window | Move onto the bounded card and scroll; account rows and reset times are retained. Very short vertical splits may still need more room because Tern exposes viewport bounds, not pane bounds. |
-| Hover no longer brightens the line, or the card stays open beside its visible edge | Reload the plugin after updating. The bright capsule stays pinned during scrolling, and the panel fills its hover target instead of leaving an invisible active area beside it. |
+| Hover no longer brightens the line, or the card stays open beside its visible edge | Update both parts, reload the Tern plugin, and restart old omp processes. The compact card and full strip now have separate real hover targets; the capsule stays pinned during scrolling. |
 
 Don't edit Tern's `settings.json` from PowerShell. It saves the file with a BOM, and Tern falls back to its
 default settings until the file is restored.

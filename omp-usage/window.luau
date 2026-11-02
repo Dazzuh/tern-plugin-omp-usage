@@ -28,15 +28,8 @@
 -- narrow pane a window that doesn't fit wraps, whole, onto a second line the 13px box cuts off; its tip, on the
 -- meter's `::after`, is sized to nothing past the box's width, so it goes too.
 --
--- Hovering lifts the line into a bright glass capsule and opens a bounded detail card after a beat. The capsule
--- stays at the bottom while its host scrolls the card's accounts, windows, countdowns and saved-reset dates.
--- Tern's own tooltips use
--- `title` attributes, which a plugin can't set on omp's nodes, and it shows the nearest `title` up the tree,
--- so neither can hang off the meter
--- (its context tooltip would show too). The hover target is the composer's attachment-chips row instead: empty
--- and hidden unless something is attached, untitled all the way up, and a direct child of the composer like the
--- meter, so it can be laid over the line with the meter's own offsets. While attachments show, the line stays
--- but doesn't react to hover.
+-- Hovering lifts the line into a bright glass capsule and opens a bounded detail card after a beat. The
+-- extension supplies separate native trigger and card rows, so only the line and card hold the hover open.
 --
 -- When a window's share changes (a window is its provider and its label, so switching providers or modes
 -- doesn't count), the line prints again, left to right, while a comet runs each changed bar to its new level
@@ -1224,14 +1217,11 @@ local function tips(line: Line, strength: number): Layers
 	return layers
 end
 
--- The hover target: the composer's empty chips row (see the header), laid over the usage line.
-local HOST = "%s.sf-col[data-role^='omp.editor'] > .sf-row[data-role='omp.composer.chips']:is(.sf-hidden, .sf-void)"
+local HOST = ".sf-col[data-role='ou.hover']"
 local METER = ".tn-pane.on .sf-meter[data-role='omp.composer.context']"
 
--- The target in the focused pane; `region` narrows it by a class of the surface region (`.sf-chat-reader`,
--- `.sf-still`), which sits between the pane and the composer.
 local function host(region: string?): string
-	return ".tn-pane.on " .. string.format(HOST, if region then region .. " " else "")
+	return ".tn-pane.on " .. (if region then region .. " " else "") .. HOST
 end
 
 -- The capsule's ring follows the lowest window's tone, or the provider's color when none is low.
@@ -1257,19 +1247,31 @@ local function palette_css(model: Model, settings: Settings): string
 	table.insert(lines, "\t--ou-glow: " .. (if one then group_color(1, "a") else "var(--accent)") .. ";")
 	-- Opaque glass hides the line beneath the capsule and card without relying on backdrop blur.
 	table.insert(lines, "\t--ou-glass: light-dark(rgb(from var(--card) r g b / 1), rgb(from var(--pop-bg) r g b / 1));")
-	return ".tn-pane.on .sf-col[data-role^='omp.editor'] {\n" .. table.concat(lines, "\n") .. "\n}"
+	return ".tn-pane.on .sf-col[data-role^='omp.editor'], " .. host(nil) .. " {\n" .. table.concat(lines, "\n") .. "\n}"
 end
 
--- The meter draws the resting line. The host draws the scrolling card and a sticky bright copy of the line,
--- since Tern restyles the hovered element and its own parts rather than its siblings.
+-- The meter draws the resting line; the owned trigger and card draw the hover state.
 local LINE_CSS = [==[
 /* room above the hairline for the usage line, clear of the working row; every agent pane, so focus never shifts it */
 .sf-dock .sf-col[data-role^='omp.editor'] {
 	margin-top: 15px;
 }
 /* Spine anchors the meter to the outer composer frame, not its static editor column. */
-.sf-chat-spine.sf-dock > .sf-col:not([data-role]) {
+.sf-chat-spine.sf-dock > .sf-col:not([data-role]):nth-last-child(2) {
 	margin-top: 15px;
+}
+/* The above-editor widget wrapper anchors the overlay without adding composer space. */
+.sf-dock > .sf-col:not([data-role]):nth-last-child(3) {
+	position: relative;
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	overflow: visible;
+}
+.sf-dock > .sf-col:not([data-role]):nth-last-child(3) > .sf-spacer.sz-sm {
+	display: none;
 }
 /* the providers' colors */
 $PALETTE
@@ -1313,49 +1315,52 @@ $TIPS_CSS
 	left: var(--ou-sp-side);
 	right: calc(var(--ou-sp-side) - 16px);
 }
-/* the hover target over the line: the meter's place in each chat style, as long as the line (or the meter, if
-   that's shorter) */
+/* The owned root does not intercept the empty space around its two hoverable children. */
 $HOST {
-	display: block !important;
 	position: absolute;
 	left: 12px;
-	top: -28px;
-	--ou-trigger-width: min($WIDTH, calc(100% - 24px));
-	width: var(--ou-trigger-width);
-	min-width: var(--ou-trigger-width);
+	bottom: 0;
+	--ou-available: calc(100% - 24px);
+	--ou-trigger-width: min($WIDTH, 100%);
+	width: var(--ou-available);
+	min-width: 0;
 	height: 15px;
 	min-height: 0;
 	margin: 0;
 	padding: 0;
 	overflow: visible;
-	opacity: 1;
 	z-index: 5;
-	pointer-events: auto;
-	border-radius: 8px;
-	background-color: transparent;
-	box-shadow: 0 0 0 1px transparent, 0 8px 20px -12px transparent, inset 0 1px 0 transparent;
-	transition:
-		background-color 0.2s var(--ease),
-		box-shadow 0.2s var(--ease);
+	pointer-events: none;
 }
 $HOST_READER {
 	left: 16px;
-	--ou-trigger-width: min($WIDTH, calc(100% - 32px));
+	--ou-available: calc(100% - 32px);
 }
 $HOST_SPINE {
 	left: calc(var(--sp-side) - 6px);
-	--ou-trigger-width: min($WIDTH, calc(100% - 2 * var(--sp-side) + 12px));
+	--ou-available: calc(100% - 2 * var(--sp-side) + 12px);
 }
 $HOST_CONSOLE {
 	left: calc(max(0px, (100% - 1040px) / 2) + var(--cn-gut) - 12px);
-	--ou-trigger-width: min($WIDTH, calc(min(100%, 1040px) - var(--cn-gut) + 12px));
+	--ou-available: calc(min(100%, 1040px) - var(--cn-gut) + 12px);
+}
+$HOST > [data-role='ou.trigger'] {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: var(--ou-trigger-width);
+	height: 15px;
+	min-width: 0;
+	min-height: 0;
+	pointer-events: auto;
 }
 /* The bright copy stays over the resting line while the card scrolls. */
-$HOST::after {
+$HOST > [data-role='ou.trigger']::after {
 	content: $CONTENT;
 	display: block;
-	position: sticky;
-	bottom: 0;
+	position: absolute;
+	inset: 0;
+	width: 100%;
 	box-sizing: border-box;
 	height: 15px;
 	min-height: 15px;
@@ -1390,7 +1395,7 @@ $HOST::after {
 	--ou-soft: var(--t2);
 	--ou-track: color-mix(in srgb, var(--t1) 20%, transparent);
 }
-$HOST:hover::after {
+$HOST:hover > [data-role='ou.trigger']::after {
 	opacity: 1;
 }
 ]==]
@@ -1584,32 +1589,35 @@ end
 local CARD_CSS = [==[
 /* the card: the line's facts spelled out over it, a row each, in a glass panel with a title bar; one gradient,
    row by row, colors the text, and each window's row sits on a meter with a lit tip */
-/* The host scrolls the whole card, including its meters. Keep the trigger's width to retain far-right hovers. */
-/* shortcut: bounds use the viewport; use pane-relative bounds when Tern exposes pane geometry. */
-$HOST:hover {
-	top: auto;
-	bottom: calc(100% + 13px);
-	height: auto;
-	width: max(var(--ou-trigger-width), $CARD_MIN_WIDTH);
-	max-width: calc(100vw - 32px);
+/* shortcut: height uses the viewport; use pane-relative bounds when Tern exposes pane geometry. */
+$HOST > [data-role='ou.card'] {
+	position: absolute;
+	bottom: 14px;
+	--ou-card-width: min($CARD_MIN_WIDTH, 100%);
+	left: clamp(0px, calc((var(--ou-trigger-width) - 2 * var(--ou-card-width) + 0.001px) * 1000000), max(0px, (var(--ou-trigger-width) - var(--ou-card-width)) / 2));
+	width: var(--ou-card-width);
+	min-width: 0;
+	min-height: 0;
 	max-height: min(60vh, calc(100vh - 240px));
 	overflow-y: auto;
 	overflow-x: hidden;
 	overscroll-behavior: contain;
 	scrollbar-width: none;
-	background-color: transparent;
-	box-shadow: none;
+	visibility: hidden;
+	pointer-events: none;
 }
-/* the card itself, in flow in that box: its rows, meters and glass scroll with it */
-$HOST:hover::before {
+$HOST:hover > [data-role='ou.card'] {
+	visibility: visible;
+	pointer-events: auto;
+}
+$HOST:hover > [data-role='ou.card']::before {
 	content: "$CONTENT";
 	display: block;
 	position: relative;
 	box-sizing: border-box;
 	width: 100%;
-	min-width: $CARD_MIN_WIDTH;
-	margin-bottom: 8px;
-	padding: 5px max(12px, calc(100% - $CARDW)) 9px 12px;
+	margin: 0;
+	padding: 5px 12px 9px;
 	border-radius: 12px;
 	white-space: pre;
 	font: 500 11px/18px var(--mono);
@@ -1751,7 +1759,6 @@ local function card_css(rows: { Row }): string
 	)
 	return fill(CARD_CSS, {
 		HOST = host(nil),
-		CARDW = num(width * 6.6 + 12) .. "px",
 		CARD_MIN_WIDTH = num(width * 6.6 + 24) .. "px",
 		CONTENT = table.concat(lines, "\\A "),
 		IMAGES = table.concat(images, ", "),
@@ -1767,10 +1774,10 @@ local STILL_CSS = fill(
 	[==[
 /* Reduce Motion, either way: no fades, no rise, no fill, no change sweep; the card still waits its beat, then
    shows at once */
-$HOST_STILL, $HOST_STILL::after {
+$HOST_STILL > [data-role='ou.trigger']::after {
 	transition: none;
 }
-$HOST_STILL:hover::before {
+$HOST_STILL:hover > [data-role='ou.card']::before {
 	animation: omp-usage-card-still 0s 0.35s both !important;
 }
 .tn-pane.on .sf-still .sf-meter[data-role='omp.composer.context']::before,
@@ -1778,10 +1785,10 @@ $HOST_STILL:hover::before {
 	animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-	$HOST, $HOST::after {
+	$HOST > [data-role='ou.trigger']::after {
 		transition: none;
 	}
-	$HOST:hover::before {
+	$HOST:hover > [data-role='ou.card']::before {
 		animation: omp-usage-card-still 0s 0.35s both !important;
 	}
 	$METER::before,

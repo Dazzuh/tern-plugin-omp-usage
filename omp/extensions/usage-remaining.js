@@ -520,6 +520,15 @@ export default function usageRemaining(pi) {
   // model last drawn and the lines last written to LINES_FILE, and when.
   const state = { data: null, models: null, shownModel: undefined, writtenLines: undefined, writtenAt: 0 };
   pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.setWidget("usage-hover", () => ({
+      render: () => [],
+      describe: () => ({
+        k: "col", p: { role: "ou.hover" }, c: [
+          { k: "row", p: { role: "ou.trigger", grow: 1 } },
+          { k: "row", p: { role: "ou.card", grow: 1 } },
+        ],
+      }),
+    }), { placement: "aboveEditor" });
     await update(state, ctx);
     ctx.setInterval(() => {
       void update(state, ctx);
