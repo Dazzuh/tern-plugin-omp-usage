@@ -19,8 +19,9 @@ expires.
   The countdown follows the most-used account in that window, matching omp's overview; saved resets remain account-specific and are totaled across eligible accounts.
 - With several accounts on one provider, the card also lists each account on its own under its label, with that
   account's windows, meters, reset countdowns and saved resets. The label is the account's email, else its account id,
-  else `Account N`; two accounts sharing an email show their org, or `#N` if that still matches. The line above stays
-  pooled.
+  else `Account N`; two accounts sharing an email show their org, or `#N` if that still matches. Long display labels
+  use a middle ellipsis and account index while retaining their distinguishing suffix; full labels stay in the cache.
+  The line above stays pooled.
 - Or shows every provider at once, or the ones you choose, in the order you set (see [Settings](#settings)).
 - Each window gets a slim bar filled to the share left, with a lit tip, in its provider's colors: amber at 25%
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.

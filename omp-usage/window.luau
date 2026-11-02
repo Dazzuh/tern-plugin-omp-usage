@@ -1465,6 +1465,24 @@ local function window_rows(rows: { Row }, g: number, windows: { Window }, resets
 	end
 end
 
+-- A UTF-8 byte budget also bounds wide glyphs; keep the suffix and index so shortened labels stay distinct.
+local HEADING_MAX_BYTES = 48
+local HEADING_TAIL_BYTES = 20
+local function account_heading(label: string, index: number): string
+	if #label <= HEADING_MAX_BYTES then
+		return label
+	end
+	local prefix = string.format("#%d ", index)
+	local head = HEADING_MAX_BYTES - HEADING_TAIL_BYTES - #"…" - #prefix
+	local cut = utf8.offset(label, 0, head + 1) :: number
+	local tail_byte = #label - HEADING_TAIL_BYTES + 1
+	local tail = utf8.offset(label, 0, tail_byte) :: number
+	if tail < tail_byte then
+		tail = utf8.offset(label, 2, tail) :: number
+	end
+	return prefix .. string.sub(label, 1, cut - 1) .. "…" .. string.sub(label, tail)
+end
+
 -- The card's rows for a model (the first is the title): clock times are worked out when a model first shows, so
 -- they don't drift with every poll between the extension's 60s refreshes. With several providers each gets a
 -- row of its label in its color. A provider with accounts gets a section per account (its label, then its windows
@@ -1484,8 +1502,8 @@ local function card(model: Model, hint: string): { Row }
 		end
 		local accounts = group.accounts
 		if accounts then
-			for _, account in accounts do
-				table.insert(rows, { text = account.label, color = "var(--oc-head)" })
+			for i, account in accounts do
+				table.insert(rows, { text = account_heading(account.label, i), color = "var(--oc-head)" })
 				window_rows(rows, g, account.windows, account.resets, now)
 			end
 		else
