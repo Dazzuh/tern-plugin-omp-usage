@@ -363,14 +363,48 @@ function renderRemaining(reports, applies, bares) {
 // that count toward every model; a provider whose limits are all scoped to
 // some of its models shows those instead, so a provider with limits is never
 // left out.
+function renderFor(reports, bare, bares) {
+  const line = renderRemaining(reports, appliesTo(bare, bares), bares);
+  if (line || bare) return line || "";
+  return renderRemaining(reports, () => true, bares) || "";
+}
+
 function lineFor(reports, provider, bare, index) {
   if (!isTrackedProvider(provider)) return "";
   const matched = matchingReports(reports, provider);
   if (!matched.length) return "";
-  const bares = providerBares(matched[0], index);
-  const line = renderRemaining(matched, appliesTo(bare, bares), bares);
-  if (line || bare) return line || "";
-  return renderRemaining(matched, () => true, bares) || "";
+  return renderFor(matched, bare, providerBares(matched[0], index));
+}
+
+// Labels each matching account, in report order: its email, else its account
+// id, else `Account N`. A label two accounts share gets its org; if that still
+// collides, a `#N` position.
+function accountLabels(matched) {
+  const text = (v) => (typeof v === "string" ? v.trim() : "");
+  const tally = (labels) => labels.reduce((n, l) => n.set(l, (n.get(l) ?? 0) + 1), new Map());
+  const base = matched.map((r, i) => text(r.metadata?.email) || text(r.metadata?.accountId) || `Account ${i + 1}`);
+  const shared = tally(base);
+  const withOrg = matched.map((r, i) => {
+    const org = text(r.metadata?.orgName) || text(r.metadata?.orgId);
+    return shared.get(base[i]) > 1 && org ? `${base[i]} (${org})` : base[i];
+  });
+  const ambiguous = tally(withOrg);
+  return withOrg.map((label, i) => (ambiguous.get(label) > 1 ? `${label} #${i + 1}` : label));
+}
+
+// Each account's own { label, line, resets } when two or more accounts of the
+// provider report, as the card lists them. Same windows, scope and fallback as
+// the pooled line and resets; accounts with no line are left out.
+function accountEntries(matched, bare, bares) {
+  if (matched.length < 2) return [];
+  const labels = accountLabels(matched);
+  const applies = appliesTo(bare, bares);
+  const out = [];
+  matched.forEach((report, i) => {
+    const line = renderFor([report], bare, bares);
+    if (line) out.push({ label: labels[i], line, resets: savedResets(report, applies, bares) });
+  });
+  return out;
 }
 
 // Draws the status for the active model from the last fetched reports. With
@@ -396,6 +430,8 @@ function render(state, ctx) {
 //   report order, as { label, line, resets } for the windows that count
 //   toward every model, tier meters included (see lineFor; no model is given,
 //   so model-scoped windows are left out).
+// Model and provider entries also carry `accounts` when two or more accounts
+// of the provider report (see accountEntries).
 async function writeLines(state) {
   const reports = state.data && Array.isArray(state.data.reports) ? state.data.reports : null;
   const models = state.models;
@@ -408,10 +444,12 @@ async function writeLines(state) {
     const { provider, bare } = identity(m);
     const matched = isTrackedProvider(provider) ? matchingReports(reports, provider) : [];
     const bares = matched.length ? providerBares(matched[0], index) : undefined;
+    const accounts = accountEntries(matched, bare, bares);
     const entry = {
       line: lineFor(reports, provider, bare, index),
       resets: matched.flatMap((report) => savedResets(report, appliesTo(bare, bares), bares))
         .sort((a, b) => a.expiresAt - b.expiresAt),
+      ...(accounts.length ? { accounts } : {}),
     };
     const same = name in entries && JSON.stringify(entries[name]) === JSON.stringify(entry);
     entries[name] = !(name in entries) || same ? entry : null;
@@ -424,11 +462,13 @@ async function writeLines(state) {
     const line = lineFor(reports, provider, "", index);
     if (!matched.length || !line) continue;
     const bares = providerBares(matched[0], index);
+    const accounts = accountEntries(matched, "", bares);
     providers[provider] = {
       label: shortProvider(provider),
       line,
       resets: matched.flatMap((report) => savedResets(report, appliesTo("", bares), bares))
         .sort((a, b) => a.expiresAt - b.expiresAt),
+      ...(accounts.length ? { accounts } : {}),
     };
   }
   const body = JSON.stringify({ entries, providers });

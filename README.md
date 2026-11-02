@@ -17,6 +17,10 @@ expires.
   whichever model is active; a limit for one model only, such as Codex Spark's, shows only while that model is.
   When a provider has multiple accounts, each window shows the average remaining share across accounts reporting that window.
   The countdown follows the most-used account in that window, matching omp's overview; saved resets remain account-specific and are totaled across eligible accounts.
+- With several accounts on one provider, the card also lists each account on its own under its label, with that
+  account's windows, meters, reset countdowns and saved resets. The label is the account's email, else its account id,
+  else `Account N`; two accounts sharing an email show their org, or `#N` if that still matches. The line above stays
+  pooled.
 - Or shows every provider at once, or the ones you choose, in the order you set (see [Settings](#settings)).
 - Each window gets a slim bar filled to the share left, with a lit tip, in its provider's colors: amber at 25%
   or less, red at 10% or less. In a narrow pane, windows that don't fit drop off whole.
@@ -153,8 +157,11 @@ countdowns and the word `left`; the card has them, grouped by provider:
 ### The usage cache
 
 After every fetch the extension writes `~/.omp/cache/usage-remaining.json`: each model's line, keyed by the name
-omp's model chip shows, each provider's plan-wide line, and the expiry dates of saved resets. The plugin uses it
-for a viewed subagent's model, for All and Selected providers, and for the reset dates in the card. It ignores
+omp's model chip shows, each provider's plan-wide line, and the expiry dates of saved resets. For a provider with two
+or more accounts it also keeps each account's label, line and saved resets, which the card lists separately. The labels
+are the account emails from `omp usage` (or account ids, or `Account N` when neither is known), stored only on this
+machine; the cache holds no tokens and must not be committed. The plugin uses it for a viewed subagent's model, for All
+and Selected providers, and for the reset dates in the card. It ignores
 a cache older than 10 minutes; without a fresh one, every choice falls back to the current model's line. omp
 sessions started before the extension wrote the cache need a restart.
 

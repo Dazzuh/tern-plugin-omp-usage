@@ -176,9 +176,12 @@ local KV_HIDDEN = "omp-usage.hidden"
 
 type Window = { label: string, pct: number, reset: string?, saved: number?, expires: string? }
 type Reset = { at: number, count: number }
+-- A provider's account on the line: its label, its line's windows and saved resets (the hidden windows left out).
+type Account = { label: string, line: string, windows: { Window }, resets: { Reset } }
 -- A provider on the line: its key (provider id when known, else its label), label, windows and saved resets
--- (nil when the cache has none for it).
-type Group = { key: string, id: string?, label: string, windows: { Window }, resets: { Reset }? }
+-- (nil when the cache has none for it). `accounts`: each account's card section, when the cache lists several;
+-- the pooled windows stay on the line.
+type Group = { key: string, id: string?, label: string, windows: { Window }, resets: { Reset }?, accounts: { Account }? }
 -- What the line and card show, where it came from (a change counts only between two lines from the same
 -- source), and the card's title.
 type Model = {
@@ -190,9 +193,10 @@ type Model = {
 }
 -- `hide`: the ids of the status facts the line redraws, to hide in the bar.
 type Dock = { status: string?, chip: string?, viewing: boolean, hide: { string } }
--- `windows`: every window the provider's accounts report, its plan's and those only some of its models have.
-type Provider = { id: string, label: string, line: string, resets: { Reset }, windows: { Window } }
-type Entry = { line: string, resets: { Reset } }
+-- `windows`: every window the provider's accounts report, its plan's and those only some of its models have. `accounts`: its
+-- accounts' own windows and resets, when the cache lists them.
+type Provider = { id: string, label: string, line: string, resets: { Reset }, windows: { Window }, accounts: { Account }? }
+type Entry = { line: string, resets: { Reset }, accounts: { Account }? }
 type Cache = { at: number, models: { [string]: Entry }, providers: { Provider }? }
 type Settings = {
 	mode: string,
@@ -496,6 +500,22 @@ local function resets_of(value: any): { Reset }
 	return resets
 end
 
+-- A provider's or model's accounts (the cache's `accounts`): each with a label and a line; malformed ones are left out,
+-- and nil when none is left.
+local function accounts_of(value: any): { Account }?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local list: { Account } = {}
+	for _, item in ipairs(value) do
+		if type(item) == "table" and type(item.label) == "string" and item.label ~= "" and type(item.line) == "string" and item.line ~= "" then
+			local _, windows = parse_line(item.line)
+			table.insert(list, { label = item.label, line = item.line, windows = windows, resets = resets_of(item.resets) })
+		end
+	end
+	return if #list > 0 then list else nil
+end
+
 local function provider_rank(id: string): number
 	return table.find(PROVIDER_ORDER, id) or #PROVIDER_ORDER + 1
 end
@@ -532,7 +552,7 @@ local function parse_cache(doc: any): Cache?
 	if type(doc.models) == "table" then
 		for name, item in pairs(doc.models) do
 			if type(name) == "string" and type(item) == "table" and type(item.line) == "string" then
-				cache.models[name] = { line = item.line, resets = resets_of(item.resets) }
+				cache.models[name] = { line = item.line, resets = resets_of(item.resets), accounts = accounts_of(item.accounts) }
 			end
 		end
 	end
@@ -542,7 +562,7 @@ local function parse_cache(doc: any): Cache?
 			if type(id) == "string" and type(item) == "table" and type(item.line) == "string" and item.line ~= "" then
 				local label = if type(item.label) == "string" and item.label ~= "" then item.label else id
 				local _, windows = parse_line(item.line)
-				table.insert(list, { id = id, label = label, line = item.line, resets = resets_of(item.resets), windows = windows })
+				table.insert(list, { id = id, label = label, line = item.line, resets = resets_of(item.resets), windows = windows, accounts = accounts_of(item.accounts) })
 			end
 		end
 		-- after the plan's windows, those only some models have (Codex Spark's), from those models' lines
@@ -721,6 +741,22 @@ local function shown_windows(settings: Settings, id: string?, windows: { Window 
 	return kept
 end
 
+-- The accounts with the windows the settings leave on the line (`shown_windows`); those with neither a window nor a saved
+-- reset are left out, and nil when none is left.
+local function shown_accounts(settings: Settings, id: string?, accounts: { Account }?): { Account }?
+	if accounts == nil then
+		return nil
+	end
+	local list: { Account } = {}
+	for _, account in accounts do
+		local windows = shown_windows(settings, id, account.windows)
+		if #windows > 0 or #account.resets > 0 then
+			table.insert(list, { label = account.label, line = account.line, windows = windows, resets = account.resets })
+		end
+	end
+	return if #list > 0 then list else nil
+end
+
 -- `list` in the user's order: the providers `order` names first, as it has them, then the rest in the preset order.
 local function ordered(list: { Provider }, order: { string }): { Provider }
 	local rank: { [string]: number } = {}
@@ -851,18 +887,30 @@ local function provider_id(label: string, cache: Cache?): string?
 	return LABEL_IDS[label]
 end
 
+-- A window's part of a redraw signature: any change to it redraws the card.
+local function window_key(window: Window): string
+	return string.format("%s:%d:%s:%s:%s", window.label, window.pct, window.reset or "", tostring(window.saved or ""), window.expires or "")
+end
+
 local function signature_of(groups: { Group }, others: { string }, title: string): string
 	local parts: { string } = { title }
 	for _, group in groups do
 		table.insert(parts, group.key .. "=" .. group.label)
 		for _, window in group.windows do
-			table.insert(
-				parts,
-				string.format("%s:%d:%s:%s:%s", window.label, window.pct, window.reset or "", tostring(window.saved or ""), window.expires or "")
-			)
+			table.insert(parts, window_key(window))
 		end
 		for _, reset in group.resets or {} do
 			table.insert(parts, string.format("r%d*%d", reset.at, reset.count))
+		end
+		-- each account's label, line and windows too, so its card section redraws even when the pooled share doesn't change
+		for _, account in group.accounts or {} do
+			table.insert(parts, "account=" .. account.label .. "\n" .. account.line)
+			for _, window in account.windows do
+				table.insert(parts, window_key(window))
+			end
+			for _, reset in account.resets do
+				table.insert(parts, string.format("r%d*%d", reset.at, reset.count))
+			end
 		end
 	end
 	for _, other in others do
@@ -896,6 +944,7 @@ local function build_model(settings: Settings, dock: Dock, cache: Cache?): Model
 						label = provider_label or provider.label,
 						windows = provider_windows,
 						resets = provider.resets,
+						accounts = shown_accounts(settings, provider.id, provider.accounts),
 					})
 				end
 			end
@@ -919,6 +968,7 @@ local function build_model(settings: Settings, dock: Dock, cache: Cache?): Model
 				label = label or "",
 				windows = windows,
 				resets = if entry then entry.resets else nil,
+				accounts = shown_accounts(settings, id, if entry then entry.accounts else nil),
 			})
 			title = (label or "") .. (if label then " usage" else "Usage")
 			if source ~= "status" then
@@ -1397,10 +1447,82 @@ local function window_name(label: string): string
 	return if scope ~= nil and scope ~= "" then scope .. " " .. string.lower(name) else name
 end
 
+-- One window's rows in the card and the saved resets that go with them: the window's row, its meter, its reset
+-- countdown, then a saved reset's row under the window that counts it (`+N`); without one, the resets go last.
+-- `g` is the provider's color index.
+local function window_rows(rows: { Row }, g: number, windows: { Window }, resets: { Reset }, now: number)
+	local accent = group_color(g, "a")
+	local carrier: number? = nil
+	for w, window in windows do
+		if window.saved then
+			carrier = w
+		end
+	end
+	if carrier == nil and #resets > 0 then
+		for w, window in windows do
+			if window.label == "7d" then
+				carrier = w
+			end
+		end
+	end
+	local function add_resets()
+		for _, reset in resets do
+			local text = reset_text(reset, now)
+			if text then
+				table.insert(rows, {
+					text = CARD_INDENT .. text,
+					color = if reset.at - now <= RESET_WARN_MS then "var(--oc-warn)" else accent,
+				})
+			end
+		end
+	end
+	for w, window in windows do
+		local tone = tone_of(window.pct)
+		local a, b = window_colors(tone, g)
+		table.insert(rows, {
+			text = window_name(window.label) .. " window",
+			right = tostring(window.pct) .. "% left",
+			color = "var(--oc-win-" .. tone .. ")",
+			share = math.clamp(window.pct, 0, 100) / 100,
+			a = a,
+			b = b,
+		})
+		local reset = window.reset
+		if reset == "soon" then
+			table.insert(rows, { text = CARD_INDENT .. "resets soon", color = "var(--oc-mute)" })
+		elseif reset then
+			local row = "resets in " .. reset
+			local minutes, exact = countdown_minutes(reset)
+			local at = if minutes then clock_at(minutes, exact) else nil
+			if at then
+				row ..= " · " .. at
+			end
+			table.insert(rows, { text = CARD_INDENT .. row, color = "var(--oc-mute)" })
+		end
+		if w == carrier and #resets > 0 then
+			add_resets()
+		elseif window.saved then
+			local saved = window.saved :: number
+			local row = string.format("%d saved reset%s", saved, if saved == 1 then "" else "s")
+			if window.expires then
+				row ..= " · expires in " .. (window.expires :: string)
+			end
+			table.insert(rows, {
+				text = CARD_INDENT .. row,
+				color = if window.expires then "var(--oc-warn)" else accent,
+			})
+		end
+	end
+	if carrier == nil then
+		add_resets()
+	end
+end
+
 -- The card's rows for a model (the first is the title): clock times are worked out when a model first shows, so
 -- they don't drift with every poll between the extension's 60s refreshes. With several providers each gets a
--- row of its label in its color. A saved reset's row (its expiry date, from the cache) sits under the window
--- that counts it (`+N`); without dates the line's count stands in. `hint`, last, says how to open the settings.
+-- row of its label in its color. A provider with accounts gets a section per account (its label, then its windows
+-- and resets) in place of the pooled windows. A saved reset's row (its expiry date, from the cache) sits under the
+-- window that counts it (`+N`); without dates the line's count stands in. `hint`, last, says how to open the settings.
 local function card(model: Model, hint: string): { Row }
 	local key = model.signature .. "\n" .. hint
 	if key == card_for then
@@ -1410,74 +1532,17 @@ local function card(model: Model, hint: string): { Row }
 	local rows: { Row } = { { text = model.title, color = "var(--oc-head)" } }
 	local several = #model.groups > 1
 	for g, group in model.groups do
-		local accent = group_color(g, "a")
 		if several then
-			table.insert(rows, { text = group.label, color = accent })
+			table.insert(rows, { text = group.label, color = group_color(g, "a") })
 		end
-		local resets = group.resets or {}
-		local carrier: number? = nil
-		for w, window in group.windows do
-			if window.saved then
-				carrier = w
+		local accounts = group.accounts
+		if accounts then
+			for _, account in accounts do
+				table.insert(rows, { text = account.label, color = "var(--oc-head)" })
+				window_rows(rows, g, account.windows, account.resets, now)
 			end
-		end
-		if carrier == nil and #resets > 0 then
-			for w, window in group.windows do
-				if window.label == "7d" then
-					carrier = w
-				end
-			end
-		end
-		local function add_resets()
-			for _, reset in resets do
-				local text = reset_text(reset, now)
-				if text then
-					table.insert(rows, {
-						text = CARD_INDENT .. text,
-						color = if reset.at - now <= RESET_WARN_MS then "var(--oc-warn)" else accent,
-					})
-				end
-			end
-		end
-		for w, window in group.windows do
-			local tone = tone_of(window.pct)
-			local a, b = window_colors(tone, g)
-			table.insert(rows, {
-				text = window_name(window.label) .. " window",
-				right = tostring(window.pct) .. "% left",
-				color = "var(--oc-win-" .. tone .. ")",
-				share = math.clamp(window.pct, 0, 100) / 100,
-				a = a,
-				b = b,
-			})
-			local reset = window.reset
-			if reset == "soon" then
-				table.insert(rows, { text = CARD_INDENT .. "resets soon", color = "var(--oc-mute)" })
-			elseif reset then
-				local row = "resets in " .. reset
-				local minutes, exact = countdown_minutes(reset)
-				local at = if minutes then clock_at(minutes, exact) else nil
-				if at then
-					row ..= " · " .. at
-				end
-				table.insert(rows, { text = CARD_INDENT .. row, color = "var(--oc-mute)" })
-			end
-			if w == carrier and #resets > 0 then
-				add_resets()
-			elseif window.saved then
-				local saved = window.saved :: number
-				local row = string.format("%d saved reset%s", saved, if saved == 1 then "" else "s")
-				if window.expires then
-					row ..= " · expires in " .. (window.expires :: string)
-				end
-				table.insert(rows, {
-					text = CARD_INDENT .. row,
-					color = if window.expires then "var(--oc-warn)" else accent,
-				})
-			end
-		end
-		if carrier == nil then
-			add_resets()
+		else
+			window_rows(rows, g, group.windows, group.resets or {}, now)
 		end
 	end
 	for _, other in model.others do

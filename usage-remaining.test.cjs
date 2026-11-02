@@ -40,13 +40,13 @@ test("pools account windows and keeps saved resets with their owners", async () 
       expiresAt: new Date(now + days * 86400000).toISOString(),
     });
     reports = [
-      { provider: "anthropic", limits: [
+      { provider: "anthropic", metadata: { email: "a@example.com" }, limits: [
         limit("a5", "5h", .95, 1), limit("a7", "7d", .02, 12),
         limit("a-tier", "7d", .8, 12, { tier: "fable" }),
         limit("a-model", "5h", .4, 2, { modelId: "opus" }),
         limit("a-day", "1d", .5, 3),
       ], resetCredits: { credits: [credit(["a7"], 3, 2), credit(["b7"], 1)] } },
-      { provider: "anthropic", limits: [
+      { provider: "anthropic", metadata: { email: "b@example.com" }, limits: [
         limit("b5-duplicate", "5h", .9, 2), { ...limit("b5", "5h", .62, 4), amount: { usedFraction: .38 } },
         limit("b7", "7d", .36, 2), limit("b-tier", "7d", .4, 3, { tier: "fable" }),
         limit("b-model", "5h", .8, 2, { modelId: "opus" }),
@@ -72,6 +72,18 @@ test("pools account windows and keeps saved resets with their owners", async () 
     ];
     assert.deepEqual(cache.models.Opus.resets, resets);
     assert.deepEqual(cache.providers.anthropic.resets, resets);
+    const opusAccounts = cache.models.Opus.accounts;
+    assert.deepEqual(opusAccounts.map((a) => a.label), ["a@example.com", "b@example.com"]);
+    assert.match(opusAccounts[0].line, /^Claude 5h [█░]+ 95% left \(1h\) · Opus 5h [█░]+ 40% left \(2h\) · 1d [█░]+ 50% left \(3h\) · 7d [█░]+ 2% left \(12h\) \(!2 - 3d left\)/);
+    assert.match(opusAccounts[1].line, /^Claude 5h [█░]+ 62% left \(4h\) · Opus 5h [█░]+ 80% left \(2h\) · 7d [█░]+ 36% left \(2h\) \(!1 - 4d left\)/);
+    assert.deepEqual(opusAccounts[0].resets, [{ expiresAt: now + 3 * 86400000, count: 2 }]);
+    assert.deepEqual(opusAccounts[1].resets, [{ expiresAt: now + 4 * 86400000, count: 1 }]);
+    const providerAccounts = cache.providers.anthropic.accounts;
+    assert.deepEqual(providerAccounts.map((a) => a.label), ["a@example.com", "b@example.com"]);
+    assert.doesNotMatch(providerAccounts[0].line, /Opus/);
+    assert.doesNotMatch(providerAccounts[1].line, /Opus/);
+    assert.deepEqual(providerAccounts[0].resets, [{ expiresAt: now + 3 * 86400000, count: 2 }]);
+    assert.deepEqual(providerAccounts[1].resets, [{ expiresAt: now + 4 * 86400000, count: 1 }]);
 
     reports = [{ provider: "anthropic", limits: [limit("scoped", "7d", .3, 6, { modelId: "opus" })],
       resetCredits: { credits: [credit(["scoped"], 2)] } }];
@@ -80,12 +92,26 @@ test("pools account windows and keeps saved resets with their owners", async () 
     assert.deepEqual(scopedCache.models.Opus.resets, [{ expiresAt: now + 2 * 86400000, count: 1 }]);
     assert.deepEqual(scopedCache.models.Fable.resets, []);
     assert.deepEqual(scopedCache.providers.anthropic.resets, []);
+    assert.equal(scopedCache.models.Opus.accounts, undefined);
+    assert.equal(scopedCache.providers.anthropic.accounts, undefined);
 
     reports = [{ provider: "anthropic", limits: [
       { ...limit("single", "monthly", .129, 5), amount: { remainingFraction: .129, usedFraction: .9 } },
     ] }];
     await handlers.turn_end({}, ctx);
     assert.match(status, /mo [█░]+ 12% left \(5h\)/);
+    reports = [
+      { provider: "anthropic", metadata: { email: "same@example.com", orgName: "Org A" }, limits: [limit("x5", "5h", .5, 1)] },
+      { provider: "anthropic", metadata: { email: "same@example.com", orgName: "Org B" }, limits: [limit("y5", "5h", .6, 1)] },
+      { provider: "anthropic", metadata: { email: "same@example.com", orgName: "Org A" }, limits: [limit("z5", "5h", .7, 1)] },
+      { provider: "anthropic", metadata: { accountId: "acct-123" }, limits: [limit("w5", "5h", .8, 1)] },
+      { provider: "anthropic", limits: [limit("v5", "5h", .9, 1)] },
+    ];
+    await handlers.turn_end({}, ctx);
+    const labelled = JSON.parse(fs.readFileSync(path.join(home, ".omp/cache/usage-remaining.json"), "utf8"));
+    assert.deepEqual(labelled.providers.anthropic.accounts.map((a) => a.label), [
+      "same@example.com (Org A) #1", "same@example.com (Org B)", "same@example.com (Org A) #3", "acct-123", "Account 5",
+    ]);
   } finally {
     childProcess.execFile = original.execFile;
     os.homedir = original.homedir;
